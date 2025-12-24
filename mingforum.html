@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MingForum - Emoji Edition</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://unpkg.com/picmo@latest/dist/umd/index.js"></script>
+  <style>
+    :root {
+      --brand: #ff4500;
+      --bg: radial-gradient(circle at top left, #121212, #050505);
+      --card: rgba(30, 30, 32, 0.7);
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #e1e3e6;
+      --subtext: #818384;
+      --staff: #ffd700;
+      --guest: #555555;
+      --glass: blur(12px);
+    }
+    [data-theme="light"] {
+      --bg: #f0f2f5; --card: rgba(255, 255, 255, 0.8);
+      --border: rgba(0, 0, 0, 0.1); --text: #1c1e21; --subtext: #65676b;
+    }
+    body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+    #app-screen { display: none; height: 100vh; display: flex; }
+    nav { width: 250px; background: var(--card); backdrop-filter: var(--glass); border-right: 1px solid var(--border); padding: 25px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+    .nav-item { padding: 12px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.2s; }
+    .nav-item:hover { background: rgba(255,255,255,0.05); }
+    .nav-item.active { background: var(--brand); color: white; }
+    #forum-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    header { background: var(--card); backdrop-filter: var(--glass); padding: 15px 30px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    #main-feed, #global-zone { flex: 1; overflow-y: auto; padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+    #global-zone { display: none; }
+    .post-card { width: 100%; max-width: 700px; background: var(--card); backdrop-filter: var(--glass); border: 1px solid var(--border); border-radius: 16px; padding: 20px; position: relative; }
+    .staff-post { border: 1.5px solid var(--staff) !important; box-shadow: 0 0 15px rgba(255, 215, 0, 0.2); }
+    .staff-badge { background: var(--staff); color: black; padding: 1px 5px; border-radius: 3px; font-weight: 900; font-size: 9px; margin-left: 5px; text-transform: uppercase; }
+    .guest-badge { background: var(--guest); color: #ccc; padding: 1px 5px; border-radius: 3px; font-weight: bold; font-size: 9px; margin-left: 5px; text-transform: uppercase; }
+    .pfp-circle { width: 35px; height: 35px; border-radius: 50%; background: #000; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--border); vertical-align: middle; }
+    .pfp-circle img { width: 100%; height: 100%; object-fit: cover; }
+    .default-icon { color: white; font-size: 18px; }
+    .user-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; width: 100%; max-width: 900px; }
+    .user-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; text-align: center; }
+    .famous-tag { color: var(--staff); font-size: 10px; font-weight: bold; margin-bottom: 8px; display: block; letter-spacing: 1px; }
+    .btn { background: var(--brand); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; transition: 0.3s; }
+    .auth-input, textarea { width: 100%; padding: 12px; margin-bottom: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text); border-radius: 8px; box-sizing: border-box; outline: none; }
+    .xp-bar-bg { background: rgba(255,255,255,0.1); height: 6px; border-radius: 10px; margin-top: 8px; overflow: hidden; }
+    .xp-bar-fill { background: var(--brand); height: 100%; width: 0%; transition: 0.5s; }
+    .active-box { margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 12px; }
+    .active-user { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 5px; }
+    .dot { width: 7px; height: 7px; background: #4ade80; border-radius: 50%; box-shadow: 0 0 5px #4ade80; }
+    .comment-node { margin-top: 10px; padding: 8px; background: rgba(255,255,255,0.02); border-radius: 8px; font-size: 13px; }
+    .delete-btn { float: right; color: #ff4444; cursor: pointer; font-size: 10px; font-weight: bold; background: rgba(255,0,0,0.1); padding: 4px 8px; border-radius: 4px; }
+    .post-img { max-width: 100%; border-radius: 10px; margin-top: 10px; border: 1px solid var(--border); }
+    .action-btn { cursor: pointer; font-size: 18px; padding: 5px; transition: 0.2s; display: inline-flex; }
+    .action-btn:hover { transform: scale(1.2); }
+    #picker-container { position: fixed; z-index: 9999; display: none; }
+    #auth-screen, #profile-overlay, #settings-overlay { position: fixed; inset: 0; z-index: 5000; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+    #profile-overlay, #settings-overlay { display: none; background: rgba(0,0,0,0.85); z-index: 6000; }
+  </style>
+</head>
+<body data-theme="dark">
+
+  <div id="picker-container"></div>
+
+  <div id="auth-screen">
+    <div class="post-card" style="width: 350px; text-align: center;">
+      <h2 style="color:var(--brand)">MingForum</h2>
+      <div id="auth-main">
+        <input type="text" id="auth-user" class="auth-input" placeholder="Username">
+        <input type="password" id="auth-pass" class="auth-input" placeholder="Password">
+        <button class="btn" onclick="handleAuth('login')">Sign In</button>
+        <button class="btn" onclick="handleAuth('signup')" style="background:transparent; border:1px solid var(--border); margin-top:10px;">Sign Up</button>
+        <p onclick="showGuest()" style="cursor:pointer; color:var(--subtext); font-size:12px; margin-top:15px;">Enter as Guest</p>
+      </div>
+      <div id="auth-guest" style="display:none;">
+        <input type="text" id="guest-name" class="auth-input" placeholder="Guest Nickname">
+        <button class="btn" onclick="handleAuth('guest')">Enter</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-screen">
+    <nav>
+      <h2 style="color:var(--brand)">MingForum</h2>
+      <div id="nav-general" class="nav-item active" onclick="switchForum('general')">🏠 General</div>
+      <div id="nav-anime" class="nav-item" onclick="switchForum('anime')">📺 Anime</div>
+      <div id="nav-gaming" class="nav-item" onclick="switchForum('gaming')">🎮 Gaming</div>
+      <div id="nav-global" class="nav-item" onclick="switchForum('global')">🌐 Global Zone</div>
+      <div class="active-box"><div style="font-size:10px; color:var(--brand); font-weight:bold; margin-bottom:8px;">ACTIVE NOW</div><div id="active-list"></div></div>
+      <div style="flex:1"></div>
+      <div class="nav-item" onclick="toggleTheme()">🌓 Theme</div>
+      <div class="nav-item" onclick="openSettings()">⚙️ Settings</div>
+      <div style="padding:15px; background:rgba(255,255,255,0.05); border-radius:12px; margin-bottom:10px;">
+        <div id="my-name-side" style="font-weight:bold; font-size:14px;"></div>
+        <div id="my-lvl-side" style="font-size:11px; color:var(--subtext);">Level 1</div>
+        <div class="xp-bar-bg"><div id="xp-fill" class="xp-bar-fill"></div></div>
+      </div>
+      <button class="btn" onclick="location.reload()" style="background:none; border:1px solid var(--border)">Logout</button>
+    </nav>
+
+    <div id="forum-container">
+      <header>
+        <span id="header-title" style="font-weight:bold;">GENERAL</span>
+        <div id="my-pfp-header" class="pfp-circle" style="cursor:pointer" onclick="openProfile(userObj.key)"></div>
+      </header>
+      <div id="main-feed">
+        <div class="post-card">
+          <input type="text" id="post-t" class="auth-input" placeholder="Title">
+          <textarea id="post-c" rows="2" placeholder="Start Minging..."></textarea>
+          <div id="post-img-prev"></div>
+          <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center;">
+            <label class="action-btn" title="Image">📷<input type="file" hidden onchange="handleMedia(this, 'post')"></label>
+            <span class="action-btn" onclick="openEmojiPicker(event, 'post-c')">😊</span>
+          </div>
+          <button class="btn" onclick="createPost()">Post</button>
+        </div>
+        <div id="posts-list" style="width:100%; display:flex; flex-direction:column; gap:20px; align-items:center;"></div>
+      </div>
+      <div id="global-zone"><div class="user-grid" id="global-user-list"></div></div>
+    </div>
+  </div>
+
+  <div id="profile-overlay" onclick="this.style.display='none'">
+    <div class="post-card" style="width:340px; text-align:center;" onclick="event.stopPropagation()">
+      <div class="pfp-circle" id="view-pfp" style="width:80px; height:80px; margin:0 auto 15px; display:flex;"></div>
+      <h2 id="view-name"></h2>
+      <p id="view-level" style="color:var(--brand); font-weight:bold;"></p>
+      <div style="margin:20px 0;">Followers: <b id="view-followers" style="font-size:20px;">0</b></div>
+      <button class="btn" onclick="toggleFollow()">Follow</button>
+      <button id="staff-boost-btn" class="btn" style="display:none; background:var(--staff); color:black; margin-top:10px;" onclick="staffBoost()">+10 Followers (Staff)</button>
+    </div>
+  </div>
+
+  <div id="settings-overlay" onclick="this.style.display='none'">
+    <div class="post-card" style="width:300px; text-align:center;" onclick="event.stopPropagation()">
+      <h3>Settings</h3>
+      <div class="pfp-circle" style="width:80px; height:80px; margin:0 auto 15px;"><img id="settings-pfp-prev" style="display:none;"><span id="settings-pfp-icon" class="default-icon" style="font-size:40px;">👤</span></div>
+      <input type="file" id="pfp-upload" accept="image/*" style="display:none" onchange="previewPFP(this)">
+      <button class="btn" onclick="document.getElementById('pfp-upload').click()">Choose Photo</button>
+      <button class="btn" style="margin-top:10px; background:#222;" onclick="savePFP()">Save Profile</button>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCf1_uelYRFLSW8e652hHBppFUwmegkJE0",
+      authDomain: "mingchat-e8a29.firebaseapp.com",
+      databaseURL: "https://mingchat-e8a29-default-rtdb.firebaseio.com",
+      projectId: "mingchat-e8a29",
+      storageBucket: "mingchat-e8a29.appspot.com",
+      messagingSenderId: "570070920841",
+      appId: "1:570070920841:web:fa45f0f67b6fb33598e058"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    let userObj = null, currentForum = 'general', viewingKey = null, postTempImg = "", replyTempImg = {};
+
+    // --- EMOJI PICKER SETUP ---
+    let activeInputId = '';
+    const picker = picmo.createPicker({ rootElement: document.getElementById('picker-container'), theme: 'dark' });
+    picker.addEventListener('emoji:select', selection => {
+      const input = document.getElementById(activeInputId);
+      input.value += selection.emoji;
+      document.getElementById('picker-container').style.display = 'none';
+    });
+
+    function openEmojiPicker(e, inputId) {
+      e.stopPropagation();
+      activeInputId = inputId;
+      const container = document.getElementById('picker-container');
+      container.style.display = 'block';
+      container.style.top = (e.clientY - 400 > 0 ? e.clientY - 400 : 10) + 'px';
+      container.style.left = e.clientX + 'px';
+    }
+    document.addEventListener('click', () => { document.getElementById('picker-container').style.display = 'none'; });
+
+    // --- LOGIC ---
+    function toggleTheme() { document.body.setAttribute('data-theme', document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
+    function getLvlInfo(xp) { let lvl = Math.floor((xp || 0) / 100) + 1; return { lvl: "Level " + lvl, progress: (xp % 100) }; }
+    function showGuest() { document.getElementById('auth-main').style.display = 'none'; document.getElementById('auth-guest').style.display = 'block'; }
+    
+    function handleAuth(type) {
+      let name = (type === 'guest') ? document.getElementById('guest-name').value.trim() : document.getElementById('auth-user').value.trim();
+      let pass = document.getElementById('auth-pass').value;
+      if(!name) return;
+      const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if(type === 'guest') { userObj = { name, key: 'guest_'+Date.now(), isGuest: true, xp: 0 }; enterApp(); return; }
+      db.ref('users/'+key).once('value', snap => {
+        if(type === 'signup') {
+          if(snap.exists()) return alert("Taken");
+          const d = { name, password: pass, xp: 0, followers: 0, pfp: "" };
+          db.ref('users/'+key).set(d).then(() => { userObj = d; userObj.key = key; enterApp(); });
+        } else {
+          if(snap.exists() && snap.val().password === pass) { userObj = snap.val(); userObj.key = key; enterApp(); } else alert("Invalid Login");
+        }
+      });
+    }
+
+    function enterApp() { document.getElementById('auth-screen').style.display = 'none'; document.getElementById('app-screen').style.display = 'flex'; updateSidebar(); switchForum('general'); startPresence(); }
+    function startPresence() {
+      const pRef = db.ref('presence/' + userObj.key); pRef.set({ name: userObj.name, lastSeen: Date.now() }); pRef.onDisconnect().remove();
+      setInterval(() => pRef.update({ lastSeen: Date.now() }), 10000);
+      db.ref('presence').on('value', snap => {
+        const list = document.getElementById('active-list'); list.innerHTML = "";
+        snap.forEach(u => { if (Date.now() - u.val().lastSeen < 60000) list.innerHTML += `<div class="active-user"><div class="dot"></div>${u.val().name}</div>`; });
+      });
+    }
+    function updateSidebar() {
+      const info = getLvlInfo(userObj.xp); document.getElementById('my-name-side').innerText = userObj.name; document.getElementById('my-lvl-side').innerText = info.lvl;
+      document.getElementById('xp-fill').style.width = info.progress + "%"; document.getElementById('my-pfp-header').innerHTML = getPFPHTML(userObj.pfp);
+    }
+    function getPFPHTML(url) { return url ? `<img src="${url}">` : `<span class="default-icon">👤</span>`; }
+    
+    function switchForum(n) {
+      currentForum = n; document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+      if(document.getElementById('nav-'+n)) document.getElementById('nav-'+n).classList.add('active');
+      if(n === 'global') { document.getElementById('main-feed').style.display = 'none'; document.getElementById('global-zone').style.display = 'flex'; document.getElementById('header-title').innerText = "GLOBAL ZONE"; loadGlobalZone(); }
+      else { document.getElementById('main-feed').style.display = 'flex'; document.getElementById('global-zone').style.display = 'none'; document.getElementById('header-title').innerText = n.toUpperCase(); loadForum(n); }
+    }
+
+    function handleMedia(input, type, postID) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          if(type === 'post') { postTempImg = e.target.result; document.getElementById('post-img-prev').innerHTML = `<img src="${postTempImg}" class="post-img">`; }
+          else { replyTempImg[postID] = e.target.result; document.getElementById('rep-prev-'+postID).innerHTML = `<img src="${e.target.result}" class="post-img" style="height:50px;">`; }
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
+    function loadForum(n) {
+      const list = document.getElementById('posts-list'); list.innerHTML = ""; db.ref('forums/'+n).off();
+      db.ref('forums/'+n).on('child_added', snap => {
+        const p = snap.val(); db.ref('users/'+p.userKey).once('value', uSnap => {
+          const ud = uSnap.val() || {xp:0, pfp:""};
+          const isStaff = p.user.toLowerCase() === 'mings' && !p.isGuest;
+          const iAmStaff = userObj.name.toLowerCase() === 'mings' && !userObj.isGuest;
+          const card = document.createElement('div'); card.className = `post-card ${isStaff ? 'staff-post' : ''}`; card.id = `post-${snap.key}`;
+          card.innerHTML = `
+            ${iAmStaff ? `<span class="delete-btn" onclick="deletePost('${snap.key}')">DELETE</span>` : ''}
+            <div style="font-size:12px; margin-bottom:10px; color:var(--subtext)">
+              <div class="pfp-circle" style="width:25px; height:25px; margin-right:5px;">${getPFPHTML(ud.pfp)}</div>
+              <span style="cursor:pointer; font-weight:bold;" onclick="openProfile('${p.userKey}')">${p.user}</span>
+              ${isStaff ? '<span class="staff-badge">STAFF</span>' : ''} ${p.isGuest ? '<span class="guest-badge">GUEST</span>' : ''}
+              <span style="margin-left:8px; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">${getLvlInfo(ud.xp).lvl}</span>
+            </div>
+            <div style="font-weight:bold; font-size:18px;">${p.title}</div>
+            <div style="margin:10px 0;">${p.content}</div>
+            ${p.img ? `<img src="${p.img}" class="post-img">` : ''}
+            <div style="margin-top:15px; border-top:1px solid var(--border); padding-top:10px;">
+              <div id="rep-prev-${snap.key}"></div>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <span class="action-btn" onclick="openEmojiPicker(event, 'in-${snap.key}')">😊</span>
+                <label class="action-btn">📷<input type="file" hidden onchange="handleMedia(this, 'reply', '${snap.key}')"></label>
+                <input type="text" id="in-${snap.key}" class="auth-input" style="margin:0; flex:1; height:35px;" placeholder="Reply...">
+                <button class="btn" onclick="addComment('${snap.key}')" style="width:60px; height:35px; padding:0;">Send</button>
+              </div>
+              <div id="coms-${snap.key}"></div>
+            </div>`;
+          list.prepend(card); loadComments(snap.key);
+        });
+      });
+    }
+
+    function createPost() {
+      const t = document.getElementById('post-t').value, c = document.getElementById('post-c').value;
+      if(!t || !c) return;
+      db.ref('forums/'+currentForum).push({ user: userObj.name, userKey: userObj.key, isGuest: !!userObj.isGuest, title: t, content: c, img: postTempImg });
+      if(!userObj.isGuest) { userObj.xp += 10; db.ref('users/'+userObj.key+'/xp').set(userObj.xp); updateSidebar(); }
+      document.getElementById('post-t').value = ""; document.getElementById('post-c').value = ""; document.getElementById('post-img-prev').innerHTML = ""; postTempImg = "";
+    }
+
+    function addComment(pk) {
+      const inp = document.getElementById('in-'+pk); if(!inp.value.trim() && !replyTempImg[pk]) return;
+      db.ref('comments/'+pk).push({ user: userObj.name, text: inp.value, img: replyTempImg[pk] || "", isStaff: (userObj.name.toLowerCase() === 'mings' && !userObj.isGuest), isGuest: !!userObj.isGuest });
+      if(!userObj.isGuest) { userObj.xp += 5; db.ref('users/'+userObj.key+'/xp').set(userObj.xp); updateSidebar(); }
+      inp.value = ""; document.getElementById('rep-prev-'+pk).innerHTML = ""; delete replyTempImg[pk];
+    }
+
+    function loadComments(pk) {
+      db.ref('comments/'+pk).on('child_added', snap => {
+        const d = snap.val(); const div = document.createElement('div'); div.className = 'comment-node';
+        div.innerHTML = `<b>${d.user}</b>${d.isStaff ? '<span class="staff-badge">STAFF</span>' : ''}${d.isGuest ? '<span class="guest-badge">GUEST</span>' : ''}: <span>${d.text}</span> ${d.img ? `<br><img src="${d.img}" class="post-img" style="max-height:150px; width:auto;">` : ''}`;
+        document.getElementById('coms-'+pk).appendChild(div);
+      });
+    }
+
+    function loadGlobalZone() {
+        const list = document.getElementById('global-user-list'); list.innerHTML = "Loading...";
+        db.ref('users').once('value', snap => {
+            list.innerHTML = ""; let users = []; snap.forEach(u => { users.push({key: u.key, ...u.val()}); });
+            users.sort((a, b) => (b.followers || 0) - (a.followers || 0));
+            users.forEach((u, index) => {
+                const card = document.createElement('div'); card.className = 'user-card';
+                card.innerHTML = `
+                    ${index === 0 ? '<span class="famous-tag">👑 MOST FAMOUS</span>' : ''}
+                    <div class="pfp-circle" style="margin: 0 auto 10px; width:50px; height:50px;">${getPFPHTML(u.pfp)}</div>
+                    <div style="font-weight:bold; font-size:14px;">${u.name}</div>
+                    <div style="font-size:10px; color:var(--subtext)">${getLvlInfo(u.xp).lvl}</div>
+                    <div style="font-size:11px; margin:5px 0;">${u.followers || 0} Followers</div>
+                    <button class="btn" style="padding:5px; font-size:10px;" onclick="openProfile('${u.key}')">View</button>`;
+                list.appendChild(card);
+            });
+        });
+    }
+
+    function openProfile(k) {
+      if (!k || k.startsWith('guest')) return alert("No profiles for guests.");
+      viewingKey = k; db.ref('users/'+k).once('value', snap => {
+        const d = snap.val(); document.getElementById('view-name').innerText = d.name; document.getElementById('view-level').innerText = getLvlInfo(d.xp).lvl;
+        document.getElementById('view-followers').innerText = d.followers || 0; document.getElementById('view-pfp').innerHTML = getPFPHTML(d.pfp);
+        document.getElementById('profile-overlay').style.display = 'flex';
+        document.getElementById('staff-boost-btn').style.display = (userObj.name.toLowerCase() === 'mings' && !userObj.isGuest) ? 'block' : 'none';
+      });
+    }
+    function toggleFollow() { db.ref('users/'+viewingKey+'/followers').transaction(c => (c || 0) + 1); }
+    function openSettings() { document.getElementById('settings-overlay').style.display = 'flex'; }
+    function previewPFP(input) { if (input.files[0]) { const r = new FileReader(); r.onload = e => { document.getElementById('settings-pfp-prev').src = e.target.result; document.getElementById('settings-pfp-prev').style.display = 'block'; userObj.tempPFP = e.target.result; }; r.readAsDataURL(input.files[0]); } }
+    function savePFP() { if(userObj.tempPFP) { userObj.pfp = userObj.tempPFP; db.ref('users/' + userObj.key + '/pfp').set(userObj.pfp); updateSidebar(); } document.getElementById('settings-overlay').style.display = 'none'; }
+    function staffBoost() { db.ref('users/'+viewingKey+'/followers').transaction(c => (c || 0) + 10); }
+    function deletePost(k) { if(confirm("Delete?")) db.ref('forums/'+currentForum+'/'+k).remove(); }
+  </script>
+</body>
+</html>
